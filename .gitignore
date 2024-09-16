@@ -1,0 +1,17 @@
+.git/
+.idea/
+yarn.lock
+node_modules/
+.vscode/
+/nbproject/private/
+testvectorjob-api/
+vectorjob-api/
+.DS_Store
+*.pem
+aws-deployment
+.github/workflows/production.yml
+.github/workflows/deploy.yml
+config/default.json
+.github/
+
+.env
