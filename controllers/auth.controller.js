@@ -1,20 +1,17 @@
 import bcryptjs from "bcryptjs";
 import crypto from "crypto";
+import fs from "fs";
+import Mustache from "mustache";
+import Email from "../utils/Email.js";
 
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js";
-// import {
-// 	sendPasswordResetEmail,
-// 	sendResetSuccessEmail,
-// 	sendVerificationEmail,
-// 	sendWelcomeEmail,
-// } from "../mailtrap/emails.js";
 import User from "../models/User.js";
 
 export const signup = async (req, res) => {
-	const { email, password, name } = req.body;
+	const { email, password, first_name, last_name } = req.body;
 
 	try {
-		if (!email || !password || !name) {
+		if (!email || !password || !first_name || !last_name) {
 			throw new Error("All fields are required");
 		}
 
@@ -31,7 +28,8 @@ export const signup = async (req, res) => {
 		const user = new User({
 			email,
 			password: hashedPassword,
-			name,
+			first_name,
+			last_name,
 			verificationToken,
 			verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
 		});
@@ -41,7 +39,28 @@ export const signup = async (req, res) => {
 		// jwt
 		generateTokenAndSetCookie(res, user._id);
 
-		await sendVerificationEmail(user.email, verificationToken);
+		// Email sending
+		const template = fs.readFileSync(
+			"./emailTemplates/email_verification.mustache",
+			"utf8"
+		);
+
+		const userName = first_name + " " + last_name;
+		const body = Mustache.render(template, { name: userName, verificationToken });
+
+		// send link to user by email including validation token
+		let emailSettings = {
+			email: process.env.FROM_EMAIL,
+			fromName: process.env.FROM_NAME,
+		}
+
+		await Email.sendEmail({
+			emailSettings,
+			to: email,
+			subject: "Career Pilot Email Verification",
+			body,
+			//   cc: "contact@caisol.com"
+		});
 
 		res.status(201).json({
 			success: true,
@@ -52,6 +71,7 @@ export const signup = async (req, res) => {
 			},
 		});
 	} catch (error) {
+		console.log("Error in signup ", error);
 		res.status(400).json({ success: false, message: error.message });
 	}
 };
@@ -65,15 +85,36 @@ export const verifyEmail = async (req, res) => {
 		});
 
 		if (!user) {
-			return res.status(400).json({ success: false, message: "Invalid or expired verification code" });
+			return res.status(400).json({ success: false, message: "Invalid verification code" });
 		}
 
-		user.isVerified = true;
+		user.emailVerified = true;
 		user.verificationToken = undefined;
 		user.verificationTokenExpiresAt = undefined;
 		await user.save();
 
-		await sendWelcomeEmail(user.email, user.name);
+		// Email sending
+		const template = fs.readFileSync(
+			"./emailTemplates/welcome.mustache",
+			"utf8"
+		);
+
+		const userName = user.first_name + " " + user.last_name;
+		const body = Mustache.render(template, { name: userName });
+
+		// send link to user by email including validation token
+		let emailSettings = {
+			email: process.env.FROM_EMAIL,
+			fromName: process.env.FROM_NAME,
+		}
+
+		await Email.sendEmail({
+			emailSettings,
+			to: user.email,
+			subject: "Welcome to career pilot",
+			body,
+			//   cc: "contact@caisol.com"
+		});
 
 		res.status(200).json({
 			success: true,
@@ -89,34 +130,94 @@ export const verifyEmail = async (req, res) => {
 	}
 };
 
-export const login = async (req, res) => {
-	const { email, password } = req.body;
+export const resendVerifyEmail = async (req, res) => {
+	const { email } = req.body;
 	try {
 		const user = await User.findOne({ email });
+
 		if (!user) {
-			return res.status(400).json({ success: false, message: "Invalid credentials" });
-		}
-		const isPasswordValid = await bcryptjs.compare(password, user.password);
-		if (!isPasswordValid) {
-			return res.status(400).json({ success: false, message: "Invalid credentials" });
+			return res.status(400).json({ success: false, message: "User not found" });
 		}
 
-		generateTokenAndSetCookie(res, user._id);
+		if (user.emailVerified) {
+			return res.status(400).json({ success: false, message: "Email already verified" });
+		}
 
-		user.lastLogin = new Date();
+		const verificationToken = Math.floor(100000 + Math.random() * 900000).toString();
+		user.verificationToken = verificationToken;
+		user.verificationTokenExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 		await user.save();
+
+		// Email sending
+
+		const template = fs.readFileSync(
+			"./emailTemplates/email_verification.mustache",
+			"utf8"
+		);
+
+		const userName = user.first_name + " " + user.last_name;
+		const body = Mustache.render(template, { name: userName, verificationToken });
+
+		// send link to user by email including validation token
+		let emailSettings = {
+			email: process.env.FROM_EMAIL,
+			fromName: process.env.FROM_NAME,
+		}
+
+		await Email.sendEmail({
+			emailSettings,
+			to: email,
+			subject: "Career Pilot Email Verification",
+			body,
+			//   cc: " ",
+		});
 
 		res.status(200).json({
 			success: true,
-			message: "Logged in successfully",
-			user: {
-				...user._doc,
-				password: undefined,
-			},
+			message: "Verification email sent successfully",
 		});
 	} catch (error) {
-		console.log("Error in login ", error);
-		res.status(400).json({ success: false, message: error.message });
+		console.log("Error in reverifyEmail ", error);
+		res.status(500).json({ success: false, message: "Server error" });
+	}
+};
+
+export const login = async (req, res) => {
+	const { email, password } = req.body;
+	try {
+	  const user = await User.findOne({ email }).select("+password");
+  
+	  if (!user) {
+		return res.status(400).json({ success: false, message: "Invalid credentials" });
+	  }
+  
+	  if (!user.password) {
+		return res.status(400).json({ success: false, message: "Password not set for this user" });
+	  }
+  
+	  const isPasswordValid = await bcryptjs.compare(password, user.password);
+	  
+	  if (!isPasswordValid) {
+		return res.status(400).json({ success: false, message: "Invalid credentials" });
+	  }
+  
+	  const token = generateTokenAndSetCookie(res, user._id);
+	  console.log(token)
+  
+	  user.lastLogin = new Date();
+	  await user.save();
+  
+	  res.status(200).json({
+		success: true,
+		message: "Logged in successfully",
+		user: {
+		  ...user._doc,
+		  password: undefined,
+		},
+	  });
+	} catch (error) {
+	  console.log("Error in login ", error);
+	  res.status(400).json({ success: false, message: error.message });
 	}
 };
 

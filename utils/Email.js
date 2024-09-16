@@ -1,5 +1,5 @@
-const nodemailer = require("nodemailer");
-const config = require("config");
+import nodemailer from "nodemailer";
+import config from "config";
 
 class Email {
   static sendEmail = async (settings) => {
@@ -200,4 +200,4 @@ class Email {
   }
 }
 
-module.exports = Email;
+export default Email;

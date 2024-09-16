@@ -87,8 +87,23 @@ const UserSchema = new mongoose.Schema({
     role_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Role',
-        default: ''
-    }
+        default: null
+    },
+
+    verificationToken: {
+        type: String,
+        default: ""
+    },
+
+    verificationTokenExpiresAt: {
+        type: Date,
+        default: Date.now
+    },
+
+    lastLogin: {
+        type: Date,
+        default: Date.now
+    },
 },
 {
     timestamps: true,

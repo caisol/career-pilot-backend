@@ -16,6 +16,7 @@ import {
     logout,
     signup,
     verifyEmail,
+	resendVerifyEmail,
     forgotPassword,
     resetPassword,
     checkAuth
@@ -32,6 +33,7 @@ router.post('/login', login);
 router.post('/logout', logout);
 
 router.post('/verify-email', verifyEmail);
+router.post('/resend-verify-email', resendVerifyEmail);
 router.post('/forgot-password', forgotPassword);
 
 router.post('/reset-password/:token', resetPassword);
